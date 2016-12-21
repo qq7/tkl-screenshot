@@ -7,8 +7,8 @@ exports.execute = function() {
             'password': 'turnkey'
         }, true);
     }).waitForUrl('http://localhost/admin/', function () {
-        capture('django-admin');
+        capture('django-admin.png');
     }).thenOpen('http://localhost/doc/index.html', function () {
-        capture('django-documentation');
+        capture('django-documentation.png');
     });
 }

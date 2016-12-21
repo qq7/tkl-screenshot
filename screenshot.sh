@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
 # A script for updating the screenshots for all TKL appliances
-# Copyright ©2015 Anton Pyrogovskyi <anton@turnkeylinux.org>
+# Copyright © 2015-2016 Anton Pyrogovskyi <anton@turnkeylinux.org>
 
 # depends on: git, hub, casperjs, gawk
 # https://github.com/github/hub
@@ -12,7 +12,6 @@
 ROOTFS='build/root.sandbox'
 CASPER='casperjs --log-level=debug --verbose --ignore-ssl-errors=true'
 # CASPER='casperjs --ignore-ssl-errors=true'
-
 
 ESSENTIAL_SERVICES='apache2 nginx lighttpd stunnel4 webmin'
 
@@ -36,7 +35,7 @@ EOF
 CLONE=1
 CLONE_TO=/turnkey/fab/products
 INITHOOKS=inithooks.conf
-APPLIANCES=
+APPLIANCES=appliances.txt
 DEPTH_ARG='--depth=1'
 VERBOSE=0
 
@@ -46,7 +45,7 @@ while :; do
             show_help
             exit
             ;;
-        -n|--noclone)
+        -n|--no-clone)
             CLONE=0
             ;;
         -o|--to)
@@ -66,16 +65,6 @@ while :; do
                 continue
             else
                 printf 'ERROR: "--inithooks" requires a non-empty option argument.\n' >&2
-                exit 1
-            fi
-            ;;
-        -l|--appliance-list)
-            if [ -n "$2" ]; then
-                INITHOOKS=$2
-                shift 2
-                continue
-            else
-                printf 'ERROR: "--appliance-list" requires a non-empty option argument.\n' >&2
                 exit 1
             fi
             ;;
@@ -123,11 +112,13 @@ cd $CLONE_TO
 
 if [ $CLONE -eq 1 ]; then
     echo 'Cloning repositories...'
-    if [ -n $SRC/$APPLIANCES ]; then
-        for i in cat $SRC/$APPLIANCES; do
-            git clone --quiet $DEPTH_ARG "https://github.com/turnkeylinux-apps/$i.git"
+    if [[ -e $SRC/$APPLIANCES ]]; then
+	# Clone some of them
+        for i in $( cat $SRC/$APPLIANCES ); do
+            git clone --quiet $DEPTH_ARG "git@github.com/turnkeylinux-apps/$i.git"
         done
     else
+	# Clone all of them
         curl -s 'https://api.github.com/orgs/turnkeylinux-apps/repos?per_page=1000' | \
         grep -o 'git@[^"]*' | xargs -L1 git clone --quiet $DEPTH || \
         true # don't fail if some repos exist already
@@ -146,7 +137,9 @@ for app in *; do
     fi
 
     make redeck
-    make CHROOT_ONLY=y
+    if ! make CHROOT_ONLY=y &> log.txt; then
+        echo "Error encountered when building $app!"
+    fi
 
     cp $SRC/$INITHOOKS $ROOTFS/etc/inithooks.conf
 
@@ -154,16 +147,10 @@ for app in *; do
     fuser -sk $ROOTFS || true
     service_dispatch start
 
-    echo $app > /tmp/services.txt
-    gawk -f $SRC/services.gawk $ROOTFS/etc/confconsole/services.txt >> /tmp/services.txt
-
-    inotifywait -e attrib .done
-
-    # casperjs uses services.txt
     $CASPER $JS/screenshot.js
 
     mkdir -p /tmp/screenshots-$app
-    cp .art/*.png /tmp/screenshots-$app
+    cp .art/*.png /tmp/screenshots-$app &> log.txt
 
     service_dispatch stop
 
